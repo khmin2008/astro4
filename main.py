@@ -18,94 +18,78 @@ dec_deg = st.sidebar.slider("천체의 적위 (δ)", min_value=-90.0, max_value=
 st.sidebar.markdown("---")
 st.sidebar.subheader("⏰ 시간 및 재생 제어")
 
-# 세션 상태 변수 초기화
-if "lha_hour" not in st.session_state:
-    st.session_state.lha_hour = 0.0
-if "is_playing" not in st.session_state:
-    st.session_state.is_playing = False
+# 1. 사용자가 수동으로 조절할 수 있는 시작 시간 슬라이더
+start_hour = st.sidebar.slider("시작 지방시각 (Hour Angle)", min_value=0.0, max_value=24.0, value=0.0, step=0.5)
 
-# 슬라이더 구성
-lha_hour = st.sidebar.slider("지방시각 (Hour Angle)", min_value=0.0, max_value=24.0, value=st.session_state.lha_hour, step=0.1)
-st.session_state.lha_hour = lha_hour
+# 2. 재생 버튼
+play_button = st.sidebar.button("▶️ 일주운동 애니메이션 재생")
 
-# 버튼 제어
-play_col1, play_col2 = st.sidebar.columns(2)
-with play_col1:
-    if st.button("▶️ 일주운동 재생"):
-        st.session_state.is_playing = True
-with play_col2:
-    if st.button("⏱️ 정지/리셋"):
-        st.session_state.is_playing = False
-        st.session_state.lha_hour = 0.0
-        st.rerun()
-
-# 애니메이션 상태일 때 시간 변화 로직
-if st.session_state.is_playing:
-    time.sleep(0.03) # 프레임 속도 (낮을수록 빠름)
-    st.session_state.lha_hour = (st.session_state.lha_hour + 0.2) % 24.0
-    st.rerun()
-
-# --- 좌표 변환 수학 연산 ---
-phi = np.radians(lat_deg)
-delta = np.radians(dec_deg)
-H = np.radians(st.session_state.lha_hour * 15.0)
-
-# 1. 고도(h) 계산
-sin_alt = np.sin(phi) * np.sin(delta) + np.cos(phi) * np.cos(delta) * np.cos(H)
-sin_alt = np.clip(sin_alt, -1.0, 1.0)
-alt_rad = np.arcsin(sin_alt)
-alt_deg = np.degrees(alt_rad)
-
-# 2. 방위각(A) 계산
-cos_alt = np.cos(alt_rad)
-if cos_alt == 0:
-    az_deg = 0.0
-else:
-    cos_az = (np.sin(delta) - np.sin(phi) * sin_alt) / (np.cos(phi) * cos_alt)
-    cos_az = np.clip(cos_az, -1.0, 1.0)
-    az_rad = np.arccos(cos_az)
-    az_deg = np.degrees(az_rad)
-    if np.sin(H) > 0: 
-        az_deg = 360.0 - az_deg
-
-# --- 결과 디스플레이 ---
+# --- 레이아웃 분할 ---
 col1, col2 = st.columns([1, 2])
 
+# 애니메이션 도중 실시간 데이터와 그래프를 갱신하기 위해 st.empty() 공간(Hole)을 확보합니다.
 with col1:
-    st.subheader("📊 실시간 계산 결과")
-    st.metric(label="현재 천체의 고도 (Altitude)", value=f"{alt_deg:.2f}°")
-    st.metric(label="현재 천체의 방위각 (Azimuth)", value=f"{az_deg:.2f}° (북점 기준)")
-    st.metric(label="현재 지방시각 (LHA)", value=f"{st.session_state.lha_hour:.1f}시")
-    
-    st.markdown("---")
-    st.markdown("""
-    ### 💡 학습 포인트
-    * 재생 중에는 그래프 렌더링을 위해 마우스 회전이 잠시 끊길 수 있습니다. 
-    * 뷰를 조정하고 싶다면 `⏱️ 정지/리셋`을 누른 후 마우스로 회전해 보세요!
-    """)
+    data_container = st.empty()
 
-# --- Plotly 3D 천구 시각화 ---
 with col2:
-    st.subheader("🔮 3D 천구 및 천체 위치")
-    
+    graph_container = st.empty()
+
+# --- 좌표 변환 및 그래프 생성 핵심 함수 ---
+def draw_sky(current_lha):
+    phi = np.radians(lat_deg)
+    delta = np.radians(dec_deg)
+    H = np.radians(current_lha * 15.0)
+
+    # 1. 고도(h) 계산
+    sin_alt = np.sin(phi) * np.sin(delta) + np.cos(phi) * np.cos(delta) * np.cos(H)
+    sin_alt = np.clip(sin_alt, -1.0, 1.0)
+    alt_rad = np.arcsin(sin_alt)
+    alt_deg = np.degrees(alt_rad)
+
+    # 2. 방위각(A) 계산
+    cos_alt = np.cos(alt_rad)
+    if cos_alt == 0:
+        az_deg = 0.0
+    else:
+        cos_az = (np.sin(delta) - np.sin(phi) * sin_alt) / (np.cos(phi) * cos_alt)
+        cos_az = np.clip(cos_az, -1.0, 1.0)
+        az_rad = np.arccos(cos_az)
+        az_deg = np.degrees(az_rad)
+        if np.sin(H) > 0: 
+            az_deg = 360.0 - az_deg
+
+    # 3. 왼쪽 컬럼 텍스트 실시간 출력
+    with data_container.container():
+        st.subheader("📊 실시간 계산 결과")
+        st.metric(label="현재 천체의 고도 (Altitude)", value=f"{alt_deg:.2f}°")
+        st.metric(label="현재 천체의 방위각 (Azimuth)", value=f"{az_deg:.2f}° (북점 기준)")
+        st.metric(label="현재 지방시각 (LHA)", value=f"{current_lha:.1f}시")
+        st.markdown("---")
+        st.markdown("""
+        ### 💡 학습 포인트
+        * **지방시각이 0시**일 때 천체는 정확히 **남중**하며 고도가 가장 높습니다.
+        * `▶️ 일주운동 애니메이션 재생`을 누르면 시간이 흐르며 3D 천구 위에서 별이 회전합니다.
+        """)
+
+    # 4. 3D Plotly 그래프 그리기
     fig = ob.Figure()
     
-    # 1. 지평선원 (초록색 원)
+    # 지평선원
     theta = np.linspace(0, 2*np.pi, 100)
     fig.add_trace(ob.Scatter3d(x=np.cos(theta), y=np.sin(theta), z=np.zeros(100),
-                               mode='lines', line=dict(color='green', width=4), name='지평선'))
+                               mode='lines', line=dict(color='green', width=3), name='지평선'))
     
-    # 2. 천구 반구 가이드선 (투명 돔)
+    # 천구 가이드 돔선
     for phi_g in np.linspace(0, np.pi/2, 5):
         fig.add_trace(ob.Scatter3d(x=np.cos(phi_g)*np.cos(theta), y=np.cos(phi_g)*np.sin(theta), z=np.sin(phi_g)*np.ones(100),
                                    mode='lines', line=dict(color='gray', width=1, dash='dash'), showlegend=False))
         
-    # 3. 방위 표시 레이블
+    # 방위 표시 문자
     fig.add_trace(ob.Scatter3d(x=[1, -1, 0, 0, 0], y=[0, 0, 1, -1, 0], z=[0, 0, 0, 0, 1],
                                mode='text', text=['N(북)', 'S(남)', 'E(동)', 'W(서)', 'Z(천정)'],
                                textfont=dict(size=14, color='black'), showlegend=False))
 
-    # 4. 전체 24시간 일주운동 고정 궤적 계산
+    # 24시간 전체 고정 일주운동 궤적 선
     hours = np.linspace(0, 24, 100)
     traj_x, traj_y, traj_z = [], [], []
     for h_t in hours:
@@ -127,22 +111,21 @@ with col2:
     fig.add_trace(ob.Scatter3d(x=traj_x, y=traj_y, z=traj_z,
                                mode='lines', line=dict(color='yellow', width=4), name='일주운동 궤적'))
 
-    # 5. 현재 실시간 천체의 위치 계산 (빨간 점)
+    # 현재 실시간 별의 위치 마커 (가장 깨지지 않는 기본 형태인 원형 'circle'로 지정)
     if alt_deg >= 0:
         current_x = np.cos(alt_rad) * np.cos(np.radians(az_deg))
         current_y = np.cos(alt_rad) * np.sin(np.radians(az_deg))
         current_z = np.sin(alt_rad)
         
-        # 실시간으로 움직여야 하는 별 점
         fig.add_trace(ob.Scatter3d(x=[current_x], y=[current_y], z=[current_z],
-                                   mode='markers', marker=dict(color='red', size=12, symbol='diamond'), name='현재 천체 위치'))
-        # 중심과 연결선
+                                   mode='markers', marker=dict(color='red', size=12, symbol='circle'), name='현재 천체 위치'))
         fig.add_trace(ob.Scatter3d(x=[0, current_x], y=[0, current_y], z=[0, current_z],
-                                   mode='lines', line=dict(color='red', width=3), showlegend=False))
+                                   mode='lines', line=dict(color='red', width=2), showlegend=False))
     else:
-        st.warning("⚠️ 현재 설정된 시각에는 천체가 지평선 아래(밤)에 있어 보이지 않습니다!")
+        # 지평선 아래일 때 경고
+        pass
 
-    # 레이아웃 설정 (카메라 뷰 고정 옵션 제거하여 매번 강제 리프레시 유도)
+    # 레이아웃 고정
     fig.update_layout(
         scene=dict(
             xaxis=dict(title='북(-) / 남(+)', range=[-1.2, 1.2]),
@@ -154,5 +137,17 @@ with col2:
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
     )
     
-    # 🌟 핵심 해결책: key 인자에 실시간으로 변하는 lha_hour를 텍스트로 결합하여 매 갱신마다 새로운 객체로 컴포넌트를 강제 재로드합니다.
-    st.plotly_chart(fig, use_container_width=True, key=f"plotly_sky_{st.session_state.lha_hour:.1f}")
+    # 확보된 graph_container에 그래프를 집어넣습니다. (key 충돌 및 컴포넌트 깨짐 원천 차단)
+    graph_container.plotly_chart(fig, use_container_width=True, key="fixed_plotly_sky")
+
+# --- 실행 제어 로직 ---
+if play_button:
+    # 재생 버튼을 누르면 while 루프를 돌며 lha 값을 0부터 24까지 부드럽게 증가시킵니다.
+    current_time = start_hour
+    for _ in range(120):  # 프레임 수 조절
+        current_time = (current_time + 0.2) % 24.0
+        draw_sky(current_time)
+        time.sleep(0.04)  # 프레임 지연 시간 (초)
+else:
+    # 기본 상태일 때는 슬라이더에서 지정한 고정 시간으로 한 번만 그립니다.
+    draw_sky(start_hour)
