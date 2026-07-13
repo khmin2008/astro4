@@ -7,7 +7,7 @@ import time
 st.set_page_config(page_title="지구과학II 천구 시뮬레이터", layout="wide")
 
 st.title("🌌 천체 좌표계 변환 및 관측 시뮬레이터")
-st.markdown("** 적도 좌표계(적경, 적위)를 지평 좌표계(방위각, 고도)로 변환하고 일주운동을 시각화합니다.")
+st.markdown("**지구과학II 천문 단원:** 적도 좌표계(적경, 적위)를 지평 좌표계(방위각, 고도)로 변환하고 일주운동을 시각화합니다.")
 
 # --- 사이드바: 사용자 입력 컨트롤러 ---
 st.sidebar.header("⚙️ 관측 및 천체 설정")
@@ -18,17 +18,17 @@ dec_deg = st.sidebar.slider("천체의 적위 (δ)", min_value=-90.0, max_value=
 st.sidebar.markdown("---")
 st.sidebar.subheader("⏰ 시간 및 재생 제어")
 
-# 1. 세션 상태 변수들 변동 제어
+# 세션 상태 변수 초기화
 if "lha_hour" not in st.session_state:
     st.session_state.lha_hour = 0.0
 if "is_playing" not in st.session_state:
     st.session_state.is_playing = False
 
-# 슬라이더: 사용자가 직접 바꿀 수도 있게 설정
+# 슬라이더 구성
 lha_hour = st.sidebar.slider("지방시각 (Hour Angle)", min_value=0.0, max_value=24.0, value=st.session_state.lha_hour, step=0.1)
 st.session_state.lha_hour = lha_hour
 
-# 버튼 이벤트 처리
+# 버튼 제어
 play_col1, play_col2 = st.sidebar.columns(2)
 with play_col1:
     if st.button("▶️ 일주운동 재생"):
@@ -39,11 +39,11 @@ with play_col2:
         st.session_state.lha_hour = 0.0
         st.rerun()
 
-# 핵심: 재생 상태(is_playing)가 True이면 한 프레임(0.2시간)을 증가시키고 앱을 강제로 즉시 재실행(st.rerun)시킵니다.
+# 애니메이션 상태일 때 시간 변화 로직
 if st.session_state.is_playing:
-    time.sleep(0.05) # 프레임 속도 지연 (초)
+    time.sleep(0.03) # 프레임 속도 (낮을수록 빠름)
     st.session_state.lha_hour = (st.session_state.lha_hour + 0.2) % 24.0
-    st.rerun() # 이 함수가 호출되면 화면이 처음부터 다시 그려지며 바뀐 별 위치를 실시간 렌더링합니다.
+    st.rerun()
 
 # --- 좌표 변환 수학 연산 ---
 phi = np.radians(lat_deg)
@@ -75,13 +75,13 @@ with col1:
     st.subheader("📊 실시간 계산 결과")
     st.metric(label="현재 천체의 고도 (Altitude)", value=f"{alt_deg:.2f}°")
     st.metric(label="현재 천체의 방위각 (Azimuth)", value=f"{az_deg:.2f}° (북점 기준)")
-    st.metric(label="현재 지방시각 (LHA)", value=f"{st.session_state.lha_hour:.2f}시")
+    st.metric(label="현재 지방시각 (LHA)", value=f"{st.session_state.lha_hour:.1f}시")
     
     st.markdown("---")
     st.markdown("""
-    ### 
-    * `▶️ 일주운동 재생` 버튼을 누르면 시간이 자동으로 계속 흐릅니다.
-    * 멈추거나 처음 상태로 돌리려면 `⏱️ 정지/리셋` 버튼을 누르세요.
+    ### 💡 학습 포인트
+    * 재생 중에는 그래프 렌더링을 위해 마우스 회전이 잠시 끊길 수 있습니다. 
+    * 뷰를 조정하고 싶다면 `⏱️ 정지/리셋`을 누른 후 마우스로 회전해 보세요!
     """)
 
 # --- Plotly 3D 천구 시각화 ---
@@ -90,22 +90,22 @@ with col2:
     
     fig = ob.Figure()
     
-    # 1. 지평선
+    # 1. 지평선원 (초록색 원)
     theta = np.linspace(0, 2*np.pi, 100)
     fig.add_trace(ob.Scatter3d(x=np.cos(theta), y=np.sin(theta), z=np.zeros(100),
-                               mode='lines', line=dict(color='green', width=3), name='지평선'))
+                               mode='lines', line=dict(color='green', width=4), name='지평선'))
     
-    # 2. 천구 가이드선
+    # 2. 천구 반구 가이드선 (투명 돔)
     for phi_g in np.linspace(0, np.pi/2, 5):
         fig.add_trace(ob.Scatter3d(x=np.cos(phi_g)*np.cos(theta), y=np.cos(phi_g)*np.sin(theta), z=np.sin(phi_g)*np.ones(100),
                                    mode='lines', line=dict(color='gray', width=1, dash='dash'), showlegend=False))
         
-    # 3. 방위 표시
+    # 3. 방위 표시 레이블
     fig.add_trace(ob.Scatter3d(x=[1, -1, 0, 0, 0], y=[0, 0, 1, -1, 0], z=[0, 0, 0, 0, 1],
                                mode='text', text=['N(북)', 'S(남)', 'E(동)', 'W(서)', 'Z(천정)'],
                                textfont=dict(size=14, color='black'), showlegend=False))
 
-    # 4. 천체의 일주운동 전체 궤적 계산
+    # 4. 전체 24시간 일주운동 고정 궤적 계산
     hours = np.linspace(0, 24, 100)
     traj_x, traj_y, traj_z = [], [], []
     for h_t in hours:
@@ -127,20 +127,22 @@ with col2:
     fig.add_trace(ob.Scatter3d(x=traj_x, y=traj_y, z=traj_z,
                                mode='lines', line=dict(color='yellow', width=4), name='일주운동 궤적'))
 
-    # 5. 현재 천체의 위치 (빨간 점)
+    # 5. 현재 실시간 천체의 위치 계산 (빨간 점)
     if alt_deg >= 0:
         current_x = np.cos(alt_rad) * np.cos(np.radians(az_deg))
         current_y = np.cos(alt_rad) * np.sin(np.radians(az_deg))
         current_z = np.sin(alt_rad)
         
+        # 실시간으로 움직여야 하는 별 점
         fig.add_trace(ob.Scatter3d(x=[current_x], y=[current_y], z=[current_z],
-                                   mode='markers', marker=dict(color='red', size=10), name='현재 천체 위치'))
+                                   mode='markers', marker=dict(color='red', size=12, symbol='diamond'), name='현재 천체 위치'))
+        # 중심과 연결선
         fig.add_trace(ob.Scatter3d(x=[0, current_x], y=[0, current_y], z=[0, current_z],
-                                   mode='lines', line=dict(color='red', width=2), showlegend=False))
+                                   mode='lines', line=dict(color='red', width=3), showlegend=False))
     else:
-        st.warning("⚠️ 현재 설정된 시각에는 천체가 지평선 아래에 있어 보이지 않습니다!")
+        st.warning("⚠️ 현재 설정된 시각에는 천체가 지평선 아래(밤)에 있어 보이지 않습니다!")
 
-    # 레이아웃 설정
+    # 레이아웃 설정 (카메라 뷰 고정 옵션 제거하여 매번 강제 리프레시 유도)
     fig.update_layout(
         scene=dict(
             xaxis=dict(title='북(-) / 남(+)', range=[-1.2, 1.2]),
@@ -152,4 +154,5 @@ with col2:
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    # 🌟 핵심 해결책: key 인자에 실시간으로 변하는 lha_hour를 텍스트로 결합하여 매 갱신마다 새로운 객체로 컴포넌트를 강제 재로드합니다.
+    st.plotly_chart(fig, use_container_width=True, key=f"plotly_sky_{st.session_state.lha_hour:.1f}")
