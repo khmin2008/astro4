@@ -7,46 +7,48 @@ import time
 st.set_page_config(page_title="지구과학II 천구 시뮬레이터", layout="wide")
 
 st.title("🌌 천체 좌표계 변환 및 관측 시뮬레이터")
-st.markdown("**지구과학II 천문 단원:** 적도 좌표계(적경, 적위)를 지평 좌표계(방위각, 고도)로 변환하고 일주운동을 시각화합니다.")
+st.markdown("** 적도 좌표계(적경, 적위)를 지평 좌표계(방위각, 고도)로 변환하고 일주운동을 시각화합니다.")
 
 # --- 사이드바: 사용자 입력 컨트롤러 ---
 st.sidebar.header("⚙️ 관측 및 천체 설정")
 
-# 1. 관측자 위도 (phi)
 lat_deg = st.sidebar.slider("관측자 위도 (N)", min_value=0.0, max_value=90.0, value=37.5, step=0.5)
-
-# 2. 천체의 적위 (delta)
 dec_deg = st.sidebar.slider("천체의 적위 (δ)", min_value=-90.0, max_value=90.0, value=20.0, step=0.5)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("⏰ 시간 및 재생 제어")
 
-# 애니메이션 상태 저장을 위한 세션 상태(session_state) 초기화
+# 1. 세션 상태 변수들 변동 제어
 if "lha_hour" not in st.session_state:
     st.session_state.lha_hour = 0.0
+if "is_playing" not in st.session_state:
+    st.session_state.is_playing = False
 
-# 3. 천체의 지방시각 (Hour Angle) - 슬라이더와 세션 상태 연동
+# 슬라이더: 사용자가 직접 바꿀 수도 있게 설정
 lha_hour = st.sidebar.slider("지방시각 (Hour Angle)", min_value=0.0, max_value=24.0, value=st.session_state.lha_hour, step=0.1)
 st.session_state.lha_hour = lha_hour
 
-# ▶️ 자동 재생 및 리셋 버튼 배치
+# 버튼 이벤트 처리
 play_col1, play_col2 = st.sidebar.columns(2)
 with play_col1:
     if st.button("▶️ 일주운동 재생"):
-        for i in range(60): # 숫자를 키우면 더 오래 재생됩니다.
-            # 지방시각을 0.2시간씩 증가시키며 24시가 넘으면 0시로 순환
-            st.session_state.lha_hour = (st.session_state.lha_hour + 0.2) % 24.0
-            time.sleep(0.04) # 재생 속도 조절 (초 단위)
-            st.rerun() # 화면을 즉시 다시 그려 애니메이션 효과 유도
+        st.session_state.is_playing = True
 with play_col2:
-    if st.button("⏱️ 리셋"):
+    if st.button("⏱️ 정지/리셋"):
+        st.session_state.is_playing = False
         st.session_state.lha_hour = 0.0
         st.rerun()
+
+# 핵심: 재생 상태(is_playing)가 True이면 한 프레임(0.2시간)을 증가시키고 앱을 강제로 즉시 재실행(st.rerun)시킵니다.
+if st.session_state.is_playing:
+    time.sleep(0.05) # 프레임 속도 지연 (초)
+    st.session_state.lha_hour = (st.session_state.lha_hour + 0.2) % 24.0
+    st.rerun() # 이 함수가 호출되면 화면이 처음부터 다시 그려지며 바뀐 별 위치를 실시간 렌더링합니다.
 
 # --- 좌표 변환 수학 연산 ---
 phi = np.radians(lat_deg)
 delta = np.radians(dec_deg)
-H = np.radians(st.session_state.lha_hour * 15.0) # 1시간 = 15도
+H = np.radians(st.session_state.lha_hour * 15.0)
 
 # 1. 고도(h) 계산
 sin_alt = np.sin(phi) * np.sin(delta) + np.cos(phi) * np.cos(delta) * np.cos(H)
@@ -54,7 +56,7 @@ sin_alt = np.clip(sin_alt, -1.0, 1.0)
 alt_rad = np.arcsin(sin_alt)
 alt_deg = np.degrees(alt_rad)
 
-# 2. 방위각(A) 계산 (북점 기준)
+# 2. 방위각(A) 계산
 cos_alt = np.cos(alt_rad)
 if cos_alt == 0:
     az_deg = 0.0
@@ -73,20 +75,20 @@ with col1:
     st.subheader("📊 실시간 계산 결과")
     st.metric(label="현재 천체의 고도 (Altitude)", value=f"{alt_deg:.2f}°")
     st.metric(label="현재 천체의 방위각 (Azimuth)", value=f"{az_deg:.2f}° (북점 기준)")
+    st.metric(label="현재 지방시각 (LHA)", value=f"{st.session_state.lha_hour:.2f}시")
     
     st.markdown("---")
     st.markdown("""
-    ### 💡 학습 포인트
-    * **지방시각(Hour Angle)**은 천체가 남중 자오선을 지나간 뒤 흐른 시간입니다.
-    * **지방시각이 0시(또는 24시)일 때** 천체는 정확히 **남중**하며 고도가 가장 높습니다.
-    * `▶️ 일주운동 재생` 버튼을 누르면 시간이 자동으로 흐르며 별이 천구를 동에서 서로 회전합니다.
+    ### 
+    * `▶️ 일주운동 재생` 버튼을 누르면 시간이 자동으로 계속 흐릅니다.
+    * 멈추거나 처음 상태로 돌리려면 `⏱️ 정지/리셋` 버튼을 누르세요.
     """)
 
 # --- Plotly 3D 천구 시각화 ---
 with col2:
     st.subheader("🔮 3D 천구 및 천체 위치")
     
-    fig = go.Figure() if 'go' in globals() else ob.Figure()
+    fig = ob.Figure()
     
     # 1. 지평선
     theta = np.linspace(0, 2*np.pi, 100)
