@@ -1,12 +1,13 @@
 import streamlit as st
 import numpy as np
 import plotly.graph_objects as ob
+import time
 
 # 페이지 설정
 st.set_page_config(page_title="지구과학II 천구 시뮬레이터", layout="wide")
 
 st.title("🌌 천체 좌표계 변환 및 관측 시뮬레이터")
-st.markdown("적도 좌표계(적경, 적위)를 지평 좌표계(방위각, 고도)로 변환하고 일주운동을 시각화합니다.")
+st.markdown("**지구과학II 천문 단원:** 적도 좌표계(적경, 적위)를 지평 좌표계(방위각, 고도)로 변환하고 일주운동을 시각화합니다.")
 
 # --- 사이드바: 사용자 입력 컨트롤러 ---
 st.sidebar.header("⚙️ 관측 및 천체 설정")
@@ -17,24 +18,43 @@ lat_deg = st.sidebar.slider("관측자 위도 (N)", min_value=0.0, max_value=90.
 # 2. 천체의 적위 (delta)
 dec_deg = st.sidebar.slider("천체의 적위 (δ)", min_value=-90.0, max_value=90.0, value=20.0, step=0.5)
 
-# 3. 천체의 지방시각 (LHA: Local Hour Angle)
-# 원래는 '지방항성시 - 적경'으로 구하지만, 시뮬레이션 직관성을 위해 '시각(Hour)' 단위로 직접 조절하게 합니다.
-lha_hour = st.sidebar.slider("지방시각 (Hour Angle)", min_value=0.0, max_value=24.0, value=0.0, step=0.1)
+st.sidebar.markdown("---")
+st.sidebar.subheader("⏰ 시간 및 재생 제어")
 
-# --- 좌표 변환 수학 연산 (라디안 변환 필요) ---
+# 애니메이션 상태 저장을 위한 세션 상태(session_state) 초기화
+if "lha_hour" not in st.session_state:
+    st.session_state.lha_hour = 0.0
+
+# 3. 천체의 지방시각 (Hour Angle) - 슬라이더와 세션 상태 연동
+lha_hour = st.sidebar.slider("지방시각 (Hour Angle)", min_value=0.0, max_value=24.0, value=st.session_state.lha_hour, step=0.1)
+st.session_state.lha_hour = lha_hour
+
+# ▶️ 자동 재생 및 리셋 버튼 배치
+play_col1, play_col2 = st.sidebar.columns(2)
+with play_col1:
+    if st.button("▶️ 일주운동 재생"):
+        for i in range(60): # 숫자를 키우면 더 오래 재생됩니다.
+            # 지방시각을 0.2시간씩 증가시키며 24시가 넘으면 0시로 순환
+            st.session_state.lha_hour = (st.session_state.lha_hour + 0.2) % 24.0
+            time.sleep(0.04) # 재생 속도 조절 (초 단위)
+            st.rerun() # 화면을 즉시 다시 그려 애니메이션 효과 유도
+with play_col2:
+    if st.button("⏱️ 리셋"):
+        st.session_state.lha_hour = 0.0
+        st.rerun()
+
+# --- 좌표 변환 수학 연산 ---
 phi = np.radians(lat_deg)
 delta = np.radians(dec_deg)
-# 1시간 = 15도
-H = np.radians(lha_hour * 15.0)
+H = np.radians(st.session_state.lha_hour * 15.0) # 1시간 = 15도
 
-# 1. 고도(h) 계산: sin(h) = sin(phi)*sin(delta) + cos(phi)*cos(delta)*cos(H)
+# 1. 고도(h) 계산
 sin_alt = np.sin(phi) * np.sin(delta) + np.cos(phi) * np.cos(delta) * np.cos(H)
-sin_alt = np.clip(sin_alt, -1.0, 1.0) # 수치 에러 방지
+sin_alt = np.clip(sin_alt, -1.0, 1.0)
 alt_rad = np.arcsin(sin_alt)
 alt_deg = np.degrees(alt_rad)
 
-# 2. 방위각(A) 계산 (북점 기준 방위각 공식 사용)
-# cos(A) = (sin(delta) - sin(phi)*sin(h)) / (cos(phi)*cos(h))
+# 2. 방위각(A) 계산 (북점 기준)
 cos_alt = np.cos(alt_rad)
 if cos_alt == 0:
     az_deg = 0.0
@@ -43,9 +63,6 @@ else:
     cos_az = np.clip(cos_az, -1.0, 1.0)
     az_rad = np.arccos(cos_az)
     az_deg = np.degrees(az_rad)
-    
-    # 시각(H)이 0~12시면 천체가 자오선 동쪽에 있으므로 방위각 보정 (북점 기준 동쪽 회전)
-    # 사인값 부호 등을 고려해 시간각이 0보다 크고 12시보다 작을 때(동편)와 아닐 때를 나눔
     if np.sin(H) > 0: 
         az_deg = 360.0 - az_deg
 
@@ -59,35 +76,34 @@ with col1:
     
     st.markdown("---")
     st.markdown("""
-    ###
-    * **위도 37.5°(중위도)**에서 적위가 `+`인 천체는 북동쪽에서 떠서 남중한 뒤 북서쪽으로 집니다.
-    * **지방시각이 0시일 때** 천체는 **남중**하며, 이때 고도가 가장 높습니다.
-    * 고도가 `0°` 미만으로 내려가면 천체가 지평선 아래로 몰입한 상태(밤/보이지 않음)를 의미합니다.
+    ### 💡 학습 포인트
+    * **지방시각(Hour Angle)**은 천체가 남중 자오선을 지나간 뒤 흐른 시간입니다.
+    * **지방시각이 0시(또는 24시)일 때** 천체는 정확히 **남중**하며 고도가 가장 높습니다.
+    * `▶️ 일주운동 재생` 버튼을 누르면 시간이 자동으로 흐르며 별이 천구를 동에서 서로 회전합니다.
     """)
 
 # --- Plotly 3D 천구 시각화 ---
 with col2:
     st.subheader("🔮 3D 천구 및 천체 위치")
     
-    fig = ob.Figure()
+    fig = go.Figure() if 'go' in globals() else ob.Figure()
     
-    # 1. 지평선 (반지름 1인 원)
+    # 1. 지평선
     theta = np.linspace(0, 2*np.pi, 100)
     fig.add_trace(ob.Scatter3d(x=np.cos(theta), y=np.sin(theta), z=np.zeros(100),
                                mode='lines', line=dict(color='green', width=3), name='지평선'))
     
-    # 2. 천구 반구 가이드선 (투명한 돔 형태 대신 선으로 표현)
+    # 2. 천구 가이드선
     for phi_g in np.linspace(0, np.pi/2, 5):
         fig.add_trace(ob.Scatter3d(x=np.cos(phi_g)*np.cos(theta), y=np.cos(phi_g)*np.sin(theta), z=np.sin(phi_g)*np.ones(100),
                                    mode='lines', line=dict(color='gray', width=1, dash='dash'), showlegend=False))
         
-    # 3. 방위 표시 (북: (1,0,0), 동: (0,1,0), 남: (-1,0,0), 서: (0,-1,0) 축 기준 설정)
-    # 여기서는 일반적인 직교좌표계 매핑: X축=북-남, Y축=동-서, Z축=천정
+    # 3. 방위 표시
     fig.add_trace(ob.Scatter3d(x=[1, -1, 0, 0, 0], y=[0, 0, 1, -1, 0], z=[0, 0, 0, 0, 1],
                                mode='text', text=['N(북)', 'S(남)', 'E(동)', 'W(서)', 'Z(천정)'],
                                textfont=dict(size=14, color='black'), showlegend=False))
 
-    # 4. 천체의 일주운동 궤적 전체 계산 (24시간 주기)
+    # 4. 천체의 일주운동 전체 궤적 계산
     hours = np.linspace(0, 24, 100)
     traj_x, traj_y, traj_z = [], [], []
     for h_t in hours:
@@ -101,8 +117,6 @@ with col2:
         az_rad_t = np.arccos(np.clip(cos_az_t, -1.0, 1.0))
         if np.sin(H_t) > 0: az_rad_t = 2*np.pi - az_rad_t
         
-        # 직교좌표계 변환 (X=북남축, Y=동서축, Z=고도축)
-        # 고도가 0 이상인 부분(지상)만 궤적 표시
         if alt_rad_t >= 0:
             traj_x.append(np.cos(alt_rad_t) * np.cos(az_rad_t))
             traj_y.append(np.cos(alt_rad_t) * np.sin(az_rad_t))
@@ -119,11 +133,10 @@ with col2:
         
         fig.add_trace(ob.Scatter3d(x=[current_x], y=[current_y], z=[current_z],
                                    mode='markers', marker=dict(color='red', size=10), name='현재 천체 위치'))
-        # 관측자 중심에서 천체를 이으는 선
         fig.add_trace(ob.Scatter3d(x=[0, current_x], y=[0, current_y], z=[0, current_z],
                                    mode='lines', line=dict(color='red', width=2), showlegend=False))
     else:
-        st.warning("⚠️ 현재 설정된 시각에는 천체가 지평선 아래에 있어 보이지 않습니다! (지방시각을 변경해 보세요)")
+        st.warning("⚠️ 현재 설정된 시각에는 천체가 지평선 아래에 있어 보이지 않습니다!")
 
     # 레이아웃 설정
     fig.update_layout(
